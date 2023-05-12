@@ -1,0 +1,42 @@
+cabal-version: 2.0
+
+-- This file has been generated from package.yaml by hpack version 0.35.2.
+--
+-- see: https://github.com/sol/hpack
+
+name:           lowarn-update-hnes-v170-v172
+version:        1.0.0
+homepage:       https://github.com/lowarn-dsu/lowarn-hnes#readme
+bug-reports:    https://github.com/lowarn-dsu/lowarn-hnes/issues
+author:         Jonathan Watson
+maintainer:     Jonathan Watson
+copyright:      2023 Jonathan Watson
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+
+source-repository head
+  type: git
+  location: https://github.com/lowarn-dsu/lowarn-hnes
+
+library
+  exposed-modules:
+      Update_hnes
+  other-modules:
+      Paths_lowarn_update_hnes_v170_v172
+  autogen-modules:
+      Paths_lowarn_update_hnes_v170_v172
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      base >=4.7 && <5
+    , containers
+    , lowarn
+    , lowarn-transformer
+    , lowarn-version-hnes-v170
+    , lowarn-version-hnes-v172
+  mixins:
+      lowarn-version-hnes-v170 (Emulator.Nes as PreviousVersion.Emulator.Nes, Emulator.Mapper as PreviousVersion.Emulator.Mapper, Emulator.Mapper.Mapper2 as PreviousVersion.Emulator.Mapper.Mapper2, Emulator.Mapper.Mapper3 as PreviousVersion.Emulator.Mapper.Mapper3, Emulator.Mapper.Mapper7 as PreviousVersion.Emulator.Mapper.Mapper7, EntryPoint_hnes as PreviousVersion.EntryPoint)
+    , lowarn-version-hnes-v172 (Emulator.Nes as NextVersion.Emulator.Nes, Emulator.Mapper as NextVersion.Emulator.Mapper, Emulator.Mapper.Mapper2 as NextVersion.Emulator.Mapper.Mapper2, Emulator.Mapper.Mapper3 as NextVersion.Emulator.Mapper.Mapper3, Emulator.Mapper.Mapper7 as NextVersion.Emulator.Mapper.Mapper7, EntryPoint_hnes as NextVersion.EntryPoint)
+  default-language: Haskell2010

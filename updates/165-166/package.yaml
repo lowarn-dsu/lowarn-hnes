@@ -1,0 +1,33 @@
+name:                lowarn-update-hnes-v165-v166
+version:             1.0.0
+github:              "lowarn-dsu/lowarn-hnes"
+license:             BSD3
+author:              "Jonathan Watson"
+# maintainer:
+copyright:           "2023 Jonathan Watson"
+
+dependencies:
+- base >= 4.7 && < 5
+- containers
+- lowarn
+- lowarn-transformer
+- name: lowarn-version-hnes-v165
+  mixin:
+  - (Emulator.Nes as PreviousVersion.Emulator.Nes, Emulator.Mapper as PreviousVersion.Emulator.Mapper, Emulator.Mapper.Mapper2 as PreviousVersion.Emulator.Mapper.Mapper2, Emulator.Mapper.Mapper3 as PreviousVersion.Emulator.Mapper.Mapper3, Emulator.Mapper.Mapper7 as PreviousVersion.Emulator.Mapper.Mapper7, EntryPoint_hnes as PreviousVersion.EntryPoint)
+- name: lowarn-version-hnes-v166
+  mixin:
+  - (Emulator.Nes as NextVersion.Emulator.Nes, Emulator.Mapper as NextVersion.Emulator.Mapper, Emulator.Mapper.Mapper2 as NextVersion.Emulator.Mapper.Mapper2, Emulator.Mapper.Mapper3 as NextVersion.Emulator.Mapper.Mapper3, Emulator.Mapper.Mapper7 as NextVersion.Emulator.Mapper.Mapper7, EntryPoint_hnes as NextVersion.EntryPoint)
+
+ghc-options:
+- -Wall
+- -Wcompat
+- -Widentities
+- -Wincomplete-record-updates
+- -Wincomplete-uni-patterns
+- -Wmissing-export-lists
+- -Wmissing-home-modules
+- -Wpartial-fields
+- -Wredundant-constraints
+
+library:
+  source-dirs: src

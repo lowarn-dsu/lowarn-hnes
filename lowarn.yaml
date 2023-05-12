@@ -1,0 +1,8 @@
+program-name: hnes
+unload: false
+system-linker: true
+version-package-subdirectory: retrofitted
+
+retrofit:
+  git: https://github.com/lowarn-dsu/hnes.git
+  branch: master

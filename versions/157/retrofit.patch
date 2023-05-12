@@ -1,0 +1,346 @@
+diff --git a/simplified/lowarn-version-hnes-v157.cabal b/retrofitted/lowarn-version-hnes-v157.cabal
+index 83d2f6c..f65f83b 100644
+--- a/simplified/lowarn-version-hnes-v157.cabal
++++ b/retrofitted/lowarn-version-hnes-v157.cabal
+@@ -21,12 +21,16 @@ library
+                      , Emulator.Util
+                      , Emulator.Trace
+                      , Emulator.Controller
+-                     , Main
+-  default-extensions: Strict
++                     , EntryPoint_hnes
++                     , RuntimeDataVar_hnes
++  default-extensions: Strict, DeriveGeneric, DeriveAnyClass
+   ghc-options:       -fno-warn-name-shadowing
+                     --  -O2
+                     --  -fllvm
+                     --  -fforce-recomp
++                     -F
++                     -pgmF=lowarn-inject
++                     -optF=hnes
+   build-depends:       base >= 4.7 && < 5
+                      , mtl
+                      , vector
+@@ -35,6 +39,11 @@ library
+                      , containers
+                      , text
+                      , sdl2
++                     , lowarn
++                     , lowarn-inject
++                     , lowarn-transformer
++
++  build-tool-depends: lowarn-inject:lowarn-inject
+ 
+ 
+   default-language:    Haskell2010
+diff --git a/simplified/src/Emulator/CPU.hs b/retrofitted/src/Emulator/CPU.hs
+index ea1f226..b54e159 100644
+--- a/simplified/src/Emulator/CPU.hs
++++ b/retrofitted/src/Emulator/CPU.hs
+@@ -9,7 +9,7 @@ import           Control.Monad.IO.Class
+ import           Data.Bits              hiding (bit)
+ import           Data.Word
+ import           Emulator.Monad
+-import           Emulator.Nes
++import           Emulator.Nes           hiding (cycles)
+ import           Emulator.Opcode
+ import           Emulator.Trace         (Trace (..), renderTrace)
+ import           Emulator.Util
+diff --git a/simplified/src/Emulator/Cartridge.hs b/retrofitted/src/Emulator/Cartridge.hs
+index a978fd9..16f9766 100644
+--- a/simplified/src/Emulator/Cartridge.hs
++++ b/retrofitted/src/Emulator/Cartridge.hs
+@@ -15,6 +15,9 @@ import           Data.Word
+ import           Emulator.Util               (prettifyWord16, sliceBS, toInt)
+ import           Prelude                     hiding (read)
+ 
++import Lowarn.Transformer (Generic, HasDatatypeInfo)
++import qualified GHC.Generics as GHC
++
+ data INesFileHeader = INesFileHeader {
+   format   :: Word8,
+   numPrg   :: Int,
+@@ -35,6 +38,7 @@ data Cartridge = Cartridge {
+   chrBank1 :: IORef Int,
+   mirror   :: Int
+ }
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ parseHeader :: BS.ByteString -> INesFileHeader
+ parseHeader bs = INesFileHeader
+diff --git a/simplified/src/Emulator/Controller.hs b/retrofitted/src/Emulator/Controller.hs
+index 3608f09..a6cebcc 100644
+--- a/simplified/src/Emulator/Controller.hs
++++ b/retrofitted/src/Emulator/Controller.hs
+@@ -15,6 +15,9 @@ import           Data.Set      as Set
+ import           Data.Word
+ import           Prelude       hiding (read)
+ 
++import Lowarn.Transformer (Generic, HasDatatypeInfo)
++import qualified GHC.Generics as GHC
++
+ data Key
+   = A
+   | B
+@@ -24,13 +27,13 @@ data Key
+   | Down
+   | Left
+   | Right
+-  deriving (Show, Eq, Enum, Ord)
++  deriving (Show, Eq, Enum, Ord, GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ data Controller = Controller {
+   index    :: IORef Int,
+   strobe   :: IORef Word8,
+   keysDown :: IORef (Set Key)
+-} deriving (Eq)
++} deriving (Eq, GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ new :: IO Controller
+ new = do
+diff --git a/simplified/src/Emulator/Monad.hs b/retrofitted/src/Emulator/Monad.hs
+index 9571de9..cbe6a87 100644
+--- a/simplified/src/Emulator/Monad.hs
++++ b/retrofitted/src/Emulator/Monad.hs
+@@ -1,4 +1,5 @@
+ {-# LANGUAGE GeneralizedNewtypeDeriving #-}
++{-# LANGUAGE DerivingStrategies #-}
+ 
+ module Emulator.Monad (
+     IOEmulator
+@@ -17,7 +18,7 @@ import qualified Emulator.Cartridge     as Cartridge
+ import           Emulator.Nes           as Nes
+ 
+ newtype IOEmulator a = IOEmulator { unNes :: ReaderT Nes IO a }
+-  deriving (Monad, Applicative, Functor, MonadIO)
++  deriving newtype (Monad, Applicative, Functor, MonadIO)
+ 
+ {-# INLINE load #-}
+ load :: Nes.Address a -> IOEmulator a
+@@ -40,8 +41,6 @@ modify addr f = do
+ trace :: String -> IOEmulator ()
+ trace = liftIO . putStrLn
+ 
+-runIOEmulator :: BS.ByteString -> IOEmulator a ->  IO a
+-runIOEmulator bs (IOEmulator reader) = do
+-  cart <- Cartridge.parse bs
+-  nes <- Nes.new cart
++runIOEmulator :: Nes -> IOEmulator a ->  IO a
++runIOEmulator nes (IOEmulator reader) = do
+   runReaderT reader nes
+diff --git a/simplified/src/Emulator/Nes.hs b/retrofitted/src/Emulator/Nes.hs
+index 400de30..fde4298 100644
+--- a/simplified/src/Emulator/Nes.hs
++++ b/retrofitted/src/Emulator/Nes.hs
+@@ -1,5 +1,5 @@
+-{-# LANGUAGE DuplicateRecordFields #-}
+-{-# LANGUAGE GADTs                 #-}
++{-# LANGUAGE DuplicateRecordFields      #-}
++{-# LANGUAGE GADTs                      #-}
+ 
+ module Emulator.Nes (
+     Nes(..)
+@@ -18,6 +18,7 @@ module Emulator.Nes (
+   , read
+   , write
+   , new
++  , CPU(..)
+ ) where
+ 
+ import           Control.Monad
+@@ -35,6 +36,9 @@ import qualified Emulator.Controller          as Controller
+ import           Emulator.Util
+ import           Prelude                      hiding (read, replicate)
+ 
++import Lowarn.Transformer (Generic, HasDatatypeInfo)
++import qualified GHC.Generics as GHC
++
+ data Sprite = Sprite {
+   sIndex         :: Int,
+   sCoords        :: Coords,
+@@ -42,19 +46,23 @@ data Sprite = Sprite {
+   sAttributeByte :: Word8,
+   sPattern       :: Word32,
+   sPriority      :: Word8
+-} deriving (Show, Eq)
++} deriving (Show, Eq, GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ type Coords = (Int, Int)
+ 
+ type Color = (Word8, Word8, Word8)
+ 
+ data IncrementMode = Horizontal | Vertical
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ data SpriteSize = Normal | Double
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ data ColorMode = Color | Grayscale
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ data Visibility = Hidden | Shown
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ data Nes = Nes {
+   cpu        :: CPU,
+@@ -62,11 +70,12 @@ data Nes = Nes {
+   cart       :: Cartridge.Cartridge,
+   controller :: Controller.Controller
+ }
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ data Interrupt
+   = IRQ
+   | NMI
+-  deriving (Eq, Show)
++  deriving (Eq, Show, GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ data CPU = CPU {
+   pc        :: IORef        Word16,
+@@ -79,6 +88,7 @@ data CPU = CPU {
+   cycles    :: IORef        Int,
+   interrupt :: IORef        (Maybe Interrupt)
+ }
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ data PPU = PPU {
+   -- Misc
+@@ -129,6 +139,7 @@ data PPU = PPU {
+   tileData              :: IORef Word64,
+   sprites               :: IORef (V.Vector Sprite)
+ }
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
+ 
+ -- GADTs are used to represent addressing
+ data Cpu a where
+diff --git a/simplified/src/Main.hs b/retrofitted/src/EntryPoint_hnes.hs
+similarity index 63%
+rename from simplified/src/Main.hs
+rename to retrofitted/src/EntryPoint_hnes.hs
+index 27309bc..55194ca 100644
+--- a/simplified/src/Main.hs
++++ b/retrofitted/src/EntryPoint_hnes.hs
+@@ -1,8 +1,8 @@
+ {-# LANGUAGE OverloadedStrings #-}
++{-# LANGUAGE TemplateHaskell #-}
+ 
+-module Main where
++module EntryPoint_hnes (LoopState(..), LowarnState(..), main, entryPoint) where
+ 
+-import           Control.Monad
+ import qualified Data.ByteString     as BS
+ import           Data.Maybe          (catMaybes)
+ import           Data.Set            as Set hiding (foldl)
+@@ -13,12 +13,32 @@ import           Emulator.Monad
+ import           Emulator.Nes
+ import           SDL                 as SDL
+ import           SDL.Time
+-import           System.Environment  (getArgs)
+ 
+-main :: IO ()
+-main = do
+-  filename <- getArgs
+-  cart' <- BS.readFile $ head filename
++import Lowarn
++import Lowarn.Transformer (Generic, HasDatatypeInfo)
++import qualified GHC.Generics as GHC
++import Lowarn.TH
++import Lowarn.Inject
++import qualified Emulator.Cartridge as Cartridge
++import Control.Monad.IO.Class (liftIO)
++
++data LoopState = LoopState
++  { loopStateLastTime :: Double,
++    loopStateFrames   :: Int,
++    loopStateRenderer :: SDL.Renderer,
++    loopStateWindow   :: SDL.Window
++  }
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
++
++data LowarnState = LowarnState
++  { lowarnStateLoopState :: LoopState,
++    lowarnStateNes :: Nes
++  }
++  deriving (GHC.Generic, Generic, HasDatatypeInfo)
++
++main :: String -> IO LowarnState
++main filename = do
++  cart' <- BS.readFile filename
+   -- Set up SDL
+   SDL.initializeAll
+   -- Create Window
+@@ -33,11 +53,14 @@ main = do
+   }
+   renderer <- SDL.createRenderer window (-1) rendererConfig
+   -- Create NES
+-  runIOEmulator cart' $ do
++  cart <- Cartridge.parse cart'
++  nes <- Emulator.Nes.new cart
++  runIOEmulator nes $ do
+     reset
+-    appLoop 0 0 renderer window
++    loopState <- appLoop 0 0 renderer window
++    return $ LowarnState loopState nes
+ 
+-appLoop :: Double -> Int -> SDL.Renderer -> SDL.Window -> IOEmulator ()
++appLoop :: Double -> Int -> SDL.Renderer -> SDL.Window -> IOEmulator LoopState
+ appLoop lastTime frames renderer window = do
+   intents <- eventsToIntents <$> SDL.pollEvents
+   oldKeys <- load Keys
+@@ -50,12 +73,17 @@ appLoop lastTime frames renderer window = do
+   time <- SDL.Time.time
+   let diff = time - lastTime
+ 
+-  if diff > 1.0 then do
+-    let fps = round $ fromIntegral frames / diff
+-    (windowTitle window) $= (T.pack $ "FPS = " ++ show fps)
+-    unless (elem Exit intents) (appLoop time 0 renderer window)
++  shouldStop <- liftIO $ isUpdateAvailable =<< injectedRuntimeData
++
++  if elem Exit intents || shouldStop then
++    return $ LoopState lastTime (frames + 1) renderer window
+   else
+-    unless (elem Exit intents) (appLoop lastTime (frames + 1) renderer window)
++    if diff > 1.0 then do
++      let fps = round $ fromIntegral frames / diff
++      (windowTitle window) $= (T.pack $ "FPS = " ++ show fps)
++      appLoop time 0 renderer window
++    else
++      appLoop lastTime (frames + 1) renderer window
+ 
+ 
+ render :: SDL.Renderer -> IOEmulator SDL.Texture
+@@ -110,3 +138,15 @@ data Intent
+   | KeyPress Controller.Key
+   | KeyRelease Controller.Key
+   deriving (Eq, Show, Ord)
++
++entryPoint :: EntryPoint LowarnState
++entryPoint = EntryPoint $ \runtimeData -> do
++  injectRuntimeData runtimeData
++  case lastState runtimeData of
++    Nothing -> main "./test.nes"
++    Just (LowarnState (LoopState lastTime frames renderer window) nes) ->
++      runIOEmulator nes $ do
++        loopState <- appLoop lastTime frames renderer window
++        return $ LowarnState loopState nes
++
++entryPointExportDeclarations 'entryPoint
+diff --git a/retrofitted/src/EntryPoint_hnes.hs-boot b/retrofitted/src/EntryPoint_hnes.hs-boot
+new file mode 100644
+index 0000000..0b35ebd
+--- /dev/null
++++ b/retrofitted/src/EntryPoint_hnes.hs-boot
+@@ -0,0 +1,3 @@
++module EntryPoint_hnes (LowarnState) where
++
++data LowarnState
+diff --git a/retrofitted/src/RuntimeDataVar_hnes.hs b/retrofitted/src/RuntimeDataVar_hnes.hs
+new file mode 100644
+index 0000000..cf9e4f9
+--- /dev/null
++++ b/retrofitted/src/RuntimeDataVar_hnes.hs
+@@ -0,0 +1,3 @@
++module RuntimeDataVar_hnes () where
++
++{- RUNTIME_DATA_VAR {-# SOURCE #-} EntryPoint_hnes (LowarnState) -}
